@@ -11,17 +11,22 @@ library(dplyr)
 library(mgcViz)
 library(ggeffects)
 library(ggview)
+library(DHARMa)
+library(MuMIn)
+library(gstat)
+library(sp)
+library(spdep)
 
 # data ----
 data <- read_excel("data_bees.xlsx")
 veg_data <- read_excel("data_vegetation.xlsx")
-
+locations <- read_excel("locations.xlsx")
 
 # research questions ----
 # In this study, we aimed to find out how bee diversity changes in clear-cuts during succession (1–30 years),
 # and which landscape (forest stand age and area) and vegetation descriptors best explain these changes. 
 
-# Q1 -  How does forest stand age and area influence bee diversity?
+# Q1 -  How does forest stand age and area influence bee diversity and are there differences between sampling periods?
 # Q2 -  Are there any flowering plant genera that are related to a higher bee diversity?
 # Q3 -  Which vegetation descriptors help to better explain bee diversity?
 
@@ -62,191 +67,305 @@ data2 <- merge(data2, veg_data[, c("Identificator", "fl_div", "fl_cov", "Lysimac
                by = "Identificator", all.x = TRUE)
 data2[is.na(data2)] <- 0
 
-# Question 0 ----
-# Are there differences in bee diversity between sampling periods?
-
-
-basemodel_ln0=glmmTMB::glmmTMB(log1p(bee_div)~fper+(1|id),
-                     data=data,REML=TRUE)
-basemodel_ln1=glmmTMB::glmmTMB(log1p(bee_div)~fper+(1|id)+(1|fper),
-                     data=data,REML=TRUE)
-basemodel_ln2=glmmTMB::glmmTMB(log1p(bee_div)~fper+(1|id/fper),
-                     data=data,REML=TRUE)
-basemodel_ln3=glmmTMB::glmmTMB(log1p(bee_div)~1+(1|id),
-                     data=data,REML=TRUE)
-basemodel_ln4=glmmTMB::glmmTMB(log1p(bee_div)~1+(1|id)+(1|fper),
-                     data=data,REML=TRUE)
-basemodel_ln5=glmmTMB::glmmTMB(log1p(bee_div)~1+(1|id/fper),
-                     data=data,REML=TRUE)
-
-basemodel_tw0=glmmTMB::glmmTMB(log1p(bee_div)~fper+(1|id),
-                     data=data,
-                     family=tw(),REML=TRUE)
-basemodel_tw1=glmmTMB::glmmTMB(log1p(bee_div)~fper+(1|id)+(1|fper),
-                     data=data,
-                     family=tw(),REML=TRUE)
-basemodel_tw2=glmmTMB::glmmTMB(log1p(bee_div)~fper+(1|id/fper),
-                     data=data,
-                     family=tw(),REML=TRUE)
-basemodel_tw3=glmmTMB::glmmTMB(log1p(bee_div)~1+(1|id),
-                     data=data,
-                     family=tw(),REML=TRUE)
-basemodel_tw4=glmmTMB::glmmTMB(log1p(bee_div)~1+(1|id)+(1|fper),
-                     data=data,
-                     family=tw(),REML=TRUE)
-basemodel_tw5=glmmTMB::glmmTMB(log1p(bee_div)~1+(1|id/fper),
-                     data=data,
-                     family=tw(),REML=TRUE)
-MuMIn::AICc(basemodel_ln0,basemodel_ln1,basemodel_ln2,
-            basemodel_ln3,basemodel_ln4,basemodel_ln5,
-            basemodel_tw0,basemodel_tw1,basemodel_tw2,
-            basemodel_tw3,basemodel_tw4,basemodel_tw5)
-
-
-# drazas sākums
-performance::check_model(ln0)
-
-testejos0=glmmTMB::glmmTMB(log1p(bee_div)~s(Area)+fper+(1|id),
-                     data=data,
-                     family=tw())
-performance::check_model(testejos0)
-MuMIn::AICc(ln0,ln1,ln2,
-            tw0,tw1,tw2,
-            testejos0)
-summary(testejos0)
-
-testejos0=glmmTMB::glmmTMB(log1p(bee_div)~s(Area)+fper+(1|id),
-                           data=data,
-                           family=tw())
-performance::check_model(testejos0)
-
-testejosXXX=glmmTMB::glmmTMB(log1p(bee_div) ~ s(Age,Area) + fper + (1|id),
-                              data=data) 
-testejosXXXx=glmmTMB::glmmTMB(log1p(bee_div) ~ s(Age,Area) + fper + (1|id/fper),
-                              data=data) 
-testejosYYY=glmmTMB::glmmTMB(log1p(bee_div) ~ s(Age,Area) + fper + (1|id),
-                             data=data,
-                             family=tw()) 
-MuMIn::AICc(testejosXXX,testejosXXXx,testejosYYY)
-summary(testejosXXX)
-
-
-testejosX1=glmmTMB::glmmTMB(log1p(bee_div) ~ s(Age)+s(Area) + fper + (1|id),
-                            data=data,REML=TRUE) 
-testejosX2=glmmTMB::glmmTMB(log1p(bee_div) ~ s(Age)+Area + fper + (1|id),
-                            data=data,REML=TRUE) 
-testejosX3=glmmTMB::glmmTMB(log1p(bee_div) ~ s(Age,Area) + fper + (1|id),
-                            data=data,REML=TRUE) 
-MuMIn::AICc(testejosX1,testejosX2,testejosX3)
-summary(testejosX3)
-DHARMa::testResiduals(DHARMa::simulateResiduals(testejosX3))
-
-
-par(mfrow=c(1,2))
-car::qqPlot(residuals(testejosXXX,type = "response"))
-car::qqPlot(residuals(testejosYYY,type = "response"))
-par(mfrow=c(1,1))
-performance::check_heteroscedasticity(testejosXXX)
-performance::check_heteroscedasticity(testejosYYY)
-performance::check_residuals(testejosYYY)
-performance::check_residuals(testejosXXX)
-par(mfrow=c(1,2))
-plot(residuals(testejosXXX)~fitted(testejosXXX))
-plot(residuals(testejosYYY)~fitted(testejosYYY))
-par(mfrow=c(1,1))
-
-DHARMa::testResiduals(DHARMa::simulateResiduals(testejosYYY))
-DHARMa::testResiduals(DHARMa::simulateResiduals(testejosXXX))
-# drazas beigas
-
-
-
 # Question 1 ----
-# How does forest stand age and area influence bee diversity?
+# How does forest stand age and area influence bee diversity and are there differences between sampling periods?
 
-## modelling ----
-# Using GAMM - we expected that the response function of the stand may not be linear due to its 
-# age-related characteristics
-
-mod1=gamm(log1p(bee_div) ~ s(Age) + s(Area) + factor(Period),
-           random=list(Identificator=~1),data=data) 
-
-mod2=gamm(log1p(bee_div) ~ s(Age) + Area + factor(Period),
-           random=list(Identificator=~1),data=data) 
-
-mod3=gamm(log1p(bee_div) ~ s(Age,Area) + factor(Period),
-          random=list(Identificator=~1),data=data) 
+hist(data$bee_div)
+skewness=sum((data$bee_div-mean(data$bee_div))^3)/((length(data$bee_div)-1)*sd(data$bee_div)^3)
+skewness
 
 
-mod1x=gamm(log1p(bee_div) ~ s(Age) + s(Area) + factor(Period),
-          random=list(Identificator=~1),data=data,method="REML") 
+mg0a=glmmTMB::glmmTMB(log1p(bee_div) ~ 1+(1|id),
+                     data=data,family=gaussian(),REML=FALSE)
+mg0b=glmmTMB::glmmTMB(log1p(bee_div) ~ 1+(1|id/fper),
+                      data=data,family=gaussian(),REML=FALSE)
+mg1a=glmmTMB::glmmTMB(log1p(bee_div) ~ 1+Area+Age+fper+(1|id),
+                      data=data,family=gaussian(),REML=FALSE)
+mg1b=glmmTMB::glmmTMB(log1p(bee_div) ~ 1+Area+Age+fper+(1|id/fper),
+                      data=data,family=gaussian(),REML=FALSE)
+mg2a=glmmTMB::glmmTMB(log1p(bee_div) ~ 1+Area+s(Age)+fper+(1|id),
+                      data=data,family=gaussian(),REML=FALSE)
+mg2b=glmmTMB::glmmTMB(log1p(bee_div) ~ 1+Area+s(Age)+fper+(1|id/fper),
+                      data=data,family=gaussian(),REML=FALSE)
+mg3a=glmmTMB::glmmTMB(log1p(bee_div) ~ 1+s(Area,Age)+fper+(1|id),
+                      data=data,family=gaussian(),REML=FALSE)
+mg3b=glmmTMB::glmmTMB(log1p(bee_div) ~ 1+s(Area,Age)+fper+(1|id/fper),
+                      data=data,family=gaussian(),REML=FALSE)
+mg4a=glmmTMB::glmmTMB(log1p(bee_div) ~ 1+Area+Age+(1|id),
+                      data=data,family=gaussian(),REML=FALSE)
+mg4b=glmmTMB::glmmTMB(log1p(bee_div) ~ 1+Area+Age+(1|id/fper),
+                      data=data,family=gaussian(),REML=FALSE)
+mg5a=glmmTMB::glmmTMB(log1p(bee_div) ~ 1+Area+s(Age)+(1|id),
+                      data=data,family=gaussian(),REML=FALSE)
+mg5b=glmmTMB::glmmTMB(log1p(bee_div) ~ 1+Area+s(Age)+(1|id/fper),
+                      data=data,family=gaussian(),REML=FALSE)
+mg6a=glmmTMB::glmmTMB(log1p(bee_div) ~ 1+s(Area,Age)+(1|id),
+                      data=data,family=gaussian(),REML=FALSE)
+mg6b=glmmTMB::glmmTMB(log1p(bee_div) ~ 1+s(Area,Age)+(1|id/fper),
+                      data=data,family=gaussian(),REML=FALSE)
 
-mod2x=gamm(log1p(bee_div) ~ s(Age) + Area + factor(Period),
-          random=list(Identificator=~1),data=data,method="REML") 
-
-mod3x=gamm(log1p(bee_div) ~ s(Age,Area) + factor(Period),
-          random=list(Identificator=~1),data=data,method="REML") 
-
-MuMIn::AICc(mod1,mod2,mod3,
-            mod1x,mod2x,mod3x)
-summary(mod3x$lme)
-summary(mod3x$gam)
-
-mod1y=gam(log1p(bee_div) ~ s(Age) + s(Area) +fper+s(id,bs="re"),
-          data=data,method="REML") 
-
-mod2y=gam(log1p(bee_div) ~ s(Age) + Area +fper+s(id,bs="re"),
-          data=data,method="REML") 
-
-mod3y=gam(log1p(bee_div) ~ s(Age,Area) +fper+s(id,bs="re"),
-          data=data,method="REML") 
-
-MuMIn::AICc(mod1,mod2,mod3,
-            mod1x,mod2x,mod3x,
-            mod1y,mod2y,mod3y)
-summary(mod3y)
-summary(mod3y)
 
 
-mod1tw=gam(bee_div ~ s(Age) + s(Area) +fper+s(id,bs="re"),
-          data=data,method="REML",
-          family=tw()) 
+mt0a=glmmTMB::glmmTMB(bee_div ~ 1+(1|id),
+                      data=data,family=tw(link="log"),REML=FALSE)
+mt0b=glmmTMB::glmmTMB(bee_div ~ 1+(1|id/fper),
+                      data=data,family=tw(link="log"),REML=FALSE)
+mt1a=glmmTMB::glmmTMB(bee_div ~ 1+Area+Age+fper+(1|id),
+                      data=data,family=tw(link="log"),REML=FALSE)
+mt1b=glmmTMB::glmmTMB(bee_div ~ 1+Area+Age+fper+(1|id/fper),
+                      data=data,family=tw(link="log"),REML=FALSE)
+mt2a=glmmTMB::glmmTMB(bee_div ~ 1+Area+s(Age)+fper+(1|id),
+                      data=data,family=tw(link="log"),REML=FALSE)
+mt2b=glmmTMB::glmmTMB(bee_div ~ 1+Area+s(Age)+fper+(1|id/fper),
+                      data=data,family=tw(link="log"),REML=FALSE)
+mt3a=glmmTMB::glmmTMB(bee_div ~ 1+s(Area,Age)+fper+(1|id),
+                      data=data,family=tw(link="log"),REML=FALSE)
+mt3b=glmmTMB::glmmTMB(bee_div ~ 1+s(Area,Age)+fper+(1|id/fper),
+                      data=data,family=tw(link="log"),REML=FALSE)
+mt4a=glmmTMB::glmmTMB(bee_div ~ 1+Area+Age+(1|id),
+                      data=data,family=tw(link="log"),REML=FALSE)
+mt4b=glmmTMB::glmmTMB(bee_div ~ 1+Area+Age+(1|id/fper),
+                      data=data,family=tw(link="log"),REML=FALSE)
+mt5a=glmmTMB::glmmTMB(bee_div ~ 1+Area+s(Age)+(1|id),
+                      data=data,family=tw(link="log"),REML=FALSE)
+mt5b=glmmTMB::glmmTMB(bee_div ~ 1+Area+s(Age)+(1|id/fper),
+                      data=data,family=tw(link="log"),REML=FALSE)
+mt6a=glmmTMB::glmmTMB(bee_div ~ 1+s(Area,Age)+(1|id),
+                      data=data,family=tw(link="log"),REML=FALSE)
+mt6b=glmmTMB::glmmTMB(bee_div ~ 1+s(Area,Age)+(1|id/fper),
+                      data=data,family=tw(link="log"),REML=FALSE)
 
-mod2tw=gam(bee_div ~ s(Age) + Area +fper+s(id,bs="re"),
-          data=data,method="REML",
-          family=tw()) 
+# mt1b - nonconvergence
+# mt2b - nonconvergence
+# mt3b - nonconvergence
+# mt6b - nonconvergence
 
-mod3tw=gam(bee_div ~ s(Age,Area) +fper+s(id,bs="re"),
-          data=data,method="REML",
-          family=tw()) 
+comparison_table1=as.data.frame(MuMIn::AICc(mg0a,mg0b,mg1a,mg1b,mg2a,mg2b,mg3a,mg3b,mg4a,mg4b,mg5a,mg5b,mg6a,
+            mt0a,mt0b,mt1a,mt2a,mt3a,mt4a,mt4b,mt5a,mt5b,mt6a))
+comparison_table1$model=rownames(comparison_table1)
+comparison_table1$delta=comparison_table1$AICc-min(comparison_table1$AICc)
+comparison_table1=comparison_table1 %>% 
+  dplyr::select(model,df,AICc,delta)
+openxlsx::write.xlsx(comparison_table1,"Table_S2.xlsx")
 
-MuMIn::AICc(mod1,mod2,mod3,
-            mod1x,mod2x,mod3x,
-            mod1y,mod2y,mod3y,
-            mod1tw,mod2tw,mod3tw)
+# REML
 
-summary(mod2tw)
-gratia::appraise(mod2tw)
-gratia::appraise(mod3tw)
+mg1aR=glmmTMB::glmmTMB(log1p(bee_div) ~ 1+Area+Age+fper+(1|id),
+                      data=data,family=gaussian(),REML=TRUE)
+mg2aR=glmmTMB::glmmTMB(log1p(bee_div) ~ 1+Area+s(Age)+fper+(1|id),
+                      data=data,family=gaussian(),REML=TRUE)
+mg3aR=glmmTMB::glmmTMB(log1p(bee_div) ~ 1+s(Area,Age)+fper+(1|id),
+                      data=data,family=gaussian(),REML=TRUE)
+mg4aR=glmmTMB::glmmTMB(log1p(bee_div) ~ 1+Area+Age+(1|id),
+                      data=data,family=gaussian(),REML=TRUE)
+mg5aR=glmmTMB::glmmTMB(log1p(bee_div) ~ 1+Area+s(Age)+(1|id),
+                      data=data,family=gaussian(),REML=TRUE)
+mg6aR=glmmTMB::glmmTMB(log1p(bee_div) ~ 1+s(Area,Age)+(1|id),
+                      data=data,family=gaussian(),REML=TRUE)
 
-gratia::appraise(mod2y)
-gratia::appraise(mod3y)
 
-gratia::appraise(mod2x$gam)
-gratia::appraise(mod3x$gam)
+# residuals
 
-## model selection ----
-MuMIn::AICc(mod1,mod2,mod3)
-# mod3 with factor interaction has the lowest AICc, so we selected this one
-summary(mod3$gam)
-sjPlot::tab_model(mod3)
+DHARMa::testResiduals(DHARMa::simulateResiduals(mg1aR))
+DHARMa::testResiduals(DHARMa::simulateResiduals(mg2aR))
+DHARMa::testResiduals(DHARMa::simulateResiduals(mg3aR))
+DHARMa::testResiduals(DHARMa::simulateResiduals(mg4aR))
+DHARMa::testResiduals(DHARMa::simulateResiduals(mg5aR))
+DHARMa::testResiduals(DHARMa::simulateResiduals(mg6aR))
 
-## prognosis and visualisation ----
-data$prognosis=expm1(predict(mod3,data))
+
+res_mg1a=DHARMa::simulateResiduals(mg1aR)
+plot(res_mg1a$scaledResiduals~data$Age)
+plot(res_mg1a$scaledResiduals~data$Area)
+
+res_mg2a=DHARMa::simulateResiduals(mg2aR)
+plot(res_mg2a$scaledResiduals~data$Age)
+plot(res_mg2a$scaledResiduals~data$Area)
+
+res_mg3a=DHARMa::simulateResiduals(mg3aR)
+plot(res_mg3a$scaledResiduals~data$Age)
+plot(res_mg3a$scaledResiduals~data$Area)
+
+res_mg4a=DHARMa::simulateResiduals(mg4aR)
+plot(res_mg4a$scaledResiduals~data$Age)
+plot(res_mg4a$scaledResiduals~data$Area)
+
+res_mg5a=DHARMa::simulateResiduals(mg5aR)
+plot(res_mg5a$scaledResiduals~data$Age)
+plot(res_mg5a$scaledResiduals~data$Area)
+
+res_mg6a=DHARMa::simulateResiduals(mg6aR)
+plot(res_mg6a$scaledResiduals~data$Age)
+plot(res_mg6a$scaledResiduals~data$Area)
+
+
+# spatial autocorrelation
+
+data_locs=left_join(data,locations,by="Identificator")
+data_locs_sf=sf::st_as_sf(data_locs,coords=c("Longitude","Latitude"),crs=4326)
+data_locs_proj=sf::st_transform(data_locs_sf,crs=3059)
+koords=sf::st_coordinates(data_locs_proj)
+data_locs_proj$x=koords[,1]
+data_locs_proj$y=koords[,2]
+
+res_mg1a=DHARMa::simulateResiduals(mg1aR)
+data_locs_proj$res=res_mg1a$scaledResiduals
+ggplot(data_locs_proj,aes(y=y,x=x,col=res))+
+  geom_point()+
+  viridis::scale_color_viridis()+
+  facet_wrap(~fper)+
+  coord_fixed(ratio=1)
+period1=data.frame(data_locs_proj[data_locs_proj$fper==1,])
+coords1 <- cbind(period1$x, period1$y)
+nb1 <- dnearneigh(coords1, 0, 20000)
+lw1 <- nb2listw(nb1, style = "W")
+moran.test(period1$res, lw1)
+coordinates(period1)<-c("x","y")
+Vario1 = gstat::variogram(scale(res) ~ 1, data=period1)
+plot(Vario1)
+period2=data.frame(data_locs_proj[data_locs_proj$fper==2,])
+coords2 <- cbind(period2$x, period2$y)
+nb2 <- dnearneigh(coords2, 0, 20000)
+lw2 <- nb2listw(nb2, style = "W")
+moran.test(period2$res, lw2)
+coordinates(period2)<-c("x","y")
+Vario2 = gstat::variogram(scale(res) ~ 1, data=period2)
+plot(Vario2)
+
+
+res_mg2a=DHARMa::simulateResiduals(mg2aR)
+data_locs_proj$res=res_mg2a$scaledResiduals
+ggplot(data_locs_proj,aes(y=y,x=x,col=res))+
+  geom_point()+
+  viridis::scale_color_viridis()+
+  facet_wrap(~fper)+
+  coord_fixed(ratio=1)
+period1=data.frame(data_locs_proj[data_locs_proj$fper==1,])
+coords1 <- cbind(period1$x, period1$y)
+nb1 <- dnearneigh(coords1, 0, 20000)
+lw1 <- nb2listw(nb1, style = "W")
+moran.test(period1$res, lw1)
+coordinates(period1)<-c("x","y")
+Vario1 = gstat::variogram(scale(res) ~ 1, data=period1)
+plot(Vario1)
+period2=data.frame(data_locs_proj[data_locs_proj$fper==2,])
+coords2 <- cbind(period2$x, period2$y)
+nb2 <- dnearneigh(coords2, 0, 20000)
+lw2 <- nb2listw(nb2, style = "W")
+moran.test(period2$res, lw2)
+coordinates(period2)<-c("x","y")
+Vario2 = gstat::variogram(scale(res) ~ 1, data=period2)
+plot(Vario2)
+
+
+res_mg3a=DHARMa::simulateResiduals(mg3aR)
+data_locs_proj$res=res_mg3a$scaledResiduals
+ggplot(data_locs_proj,aes(y=y,x=x,col=res))+
+  geom_point()+
+  viridis::scale_color_viridis()+
+  facet_wrap(~fper)+
+  coord_fixed(ratio=1)
+period1=data.frame(data_locs_proj[data_locs_proj$fper==1,])
+coords1 <- cbind(period1$x, period1$y)
+nb1 <- dnearneigh(coords1, 0, 20000)
+lw1 <- nb2listw(nb1, style = "W")
+moran.test(period1$res, lw1)
+coordinates(period1)<-c("x","y")
+Vario1 = gstat::variogram(scale(res) ~ 1, data=period1)
+plot(Vario1)
+period2=data.frame(data_locs_proj[data_locs_proj$fper==2,])
+coords2 <- cbind(period2$x, period2$y)
+nb2 <- dnearneigh(coords2, 0, 20000)
+lw2 <- nb2listw(nb2, style = "W")
+moran.test(period2$res, lw2)
+coordinates(period2)<-c("x","y")
+Vario2 = gstat::variogram(scale(res) ~ 1, data=period2)
+plot(Vario2)
+
+
+res_mg4a=DHARMa::simulateResiduals(mg4aR)
+data_locs_proj$res=res_mg4a$scaledResiduals
+ggplot(data_locs_proj,aes(y=y,x=x,col=res))+
+  geom_point()+
+  viridis::scale_color_viridis()+
+  facet_wrap(~fper)+
+  coord_fixed(ratio=1)
+period1=data.frame(data_locs_proj[data_locs_proj$fper==1,])
+coords1 <- cbind(period1$x, period1$y)
+nb1 <- dnearneigh(coords1, 0, 20000)
+lw1 <- nb2listw(nb1, style = "W")
+moran.test(period1$res, lw1)
+coordinates(period1)<-c("x","y")
+Vario1 = gstat::variogram(scale(res) ~ 1, data=period1)
+plot(Vario1)
+period2=data.frame(data_locs_proj[data_locs_proj$fper==2,])
+coords2 <- cbind(period2$x, period2$y)
+nb2 <- dnearneigh(coords2, 0, 20000)
+lw2 <- nb2listw(nb2, style = "W")
+moran.test(period2$res, lw2)
+coordinates(period2)<-c("x","y")
+Vario2 = gstat::variogram(scale(res) ~ 1, data=period2)
+plot(Vario2)
+
+
+res_mg5a=DHARMa::simulateResiduals(mg5aR)
+data_locs_proj$res=res_mg5a$scaledResiduals
+ggplot(data_locs_proj,aes(y=y,x=x,col=res))+
+  geom_point()+
+  viridis::scale_color_viridis()+
+  facet_wrap(~fper)+
+  coord_fixed(ratio=1)
+period1=data.frame(data_locs_proj[data_locs_proj$fper==1,])
+coords1 <- cbind(period1$x, period1$y)
+nb1 <- dnearneigh(coords1, 0, 20000)
+lw1 <- nb2listw(nb1, style = "W")
+moran.test(period1$res, lw1)
+coordinates(period1)<-c("x","y")
+Vario1 = gstat::variogram(scale(res) ~ 1, data=period1)
+plot(Vario1)
+period2=data.frame(data_locs_proj[data_locs_proj$fper==2,])
+coords2 <- cbind(period2$x, period2$y)
+nb2 <- dnearneigh(coords2, 0, 20000)
+lw2 <- nb2listw(nb2, style = "W")
+moran.test(period2$res, lw2)
+coordinates(period2)<-c("x","y")
+Vario2 = gstat::variogram(scale(res) ~ 1, data=period2)
+plot(Vario2)
+
+res_mg6a=DHARMa::simulateResiduals(mg6aR)
+data_locs_proj$res=res_mg6a$scaledResiduals
+ggplot(data_locs_proj,aes(y=y,x=x,col=res))+
+  geom_point()+
+  viridis::scale_color_viridis()+
+  facet_wrap(~fper)+
+  coord_fixed(ratio=1)
+period1=data.frame(data_locs_proj[data_locs_proj$fper==1,])
+coords1 <- cbind(period1$x, period1$y)
+nb1 <- dnearneigh(coords1, 0, 20000)
+lw1 <- nb2listw(nb1, style = "W")
+moran.test(period1$res, lw1)
+coordinates(period1)<-c("x","y")
+Vario1 = gstat::variogram(scale(res) ~ 1, data=period1)
+plot(Vario1)
+period2=data.frame(data_locs_proj[data_locs_proj$fper==2,])
+coords2 <- cbind(period2$x, period2$y)
+nb2 <- dnearneigh(coords2, 0, 20000)
+lw2 <- nb2listw(nb2, style = "W")
+moran.test(period2$res, lw2)
+coordinates(period2)<-c("x","y")
+Vario2 = gstat::variogram(scale(res) ~ 1, data=period2)
+plot(Vario2)
+
+# summary
+sjPlot::tab_model(mg1aR,mg2aR,mg3aR,mg4aR,mg5aR,mg6aR)
+
+
+## prediction and visualisation ----
+data$prognosis=expm1(predict(mg6aR,data))
 prognosis_data=expand.grid(Age=seq(1,30,by=1),
                            Area=seq(0,5,0.25),
                            Period=c(1,2))
-prognosis_data$prognosis=expm1(predict(mod3,prognosis_data))
+prognosis_data$prognosis=expm1(predict(mg6aR,prognosis_data, re.form = NA))
 
 # Fig 2
 labels <- c("Period 1", "Period 2")
@@ -285,7 +404,7 @@ ggview(plot = fig2,dpi=600,width=174,height=70,units="mm")
 # Which vegetation descriptors help to better explain bee diversity?
 
 # Using GAM - there is no need to consider pseudoreplication or seasonal variability, as we are using the mean values
-# of bee diversity, because no significant difference between the sample periods was found (p=0.096)
+# of bee diversity, because of negligible effects in Q1
 
 ## corellations ----
 # Checking for correlations >0.59 to exclude them from further analysis, as is the usual procedure, since strongly 
@@ -308,14 +427,19 @@ dr2 <- MuMIn::dredge(b1,subset=!(Lysimachia&&fl_cov))
 c1 <- gam(log1p(bee_div)~s(Age)+s(Area)+fl_div+fl_cov+Lysimachia+Campanula,data=data2)
 dr3 <- MuMIn::dredge(c1,subset=!(Lysimachia&&fl_cov))
 
+d1 <- glm(log1p(bee_div)~Age+Area+fl_div+fl_cov+Lysimachia+Campanula,data=data2)
+dr4 <- MuMIn::dredge(d1,subset=!(Lysimachia&&fl_cov))
+
+
 # exporting the dredge objects as excel files
 #write_xlsx(dr1, "dr1.xlsx")
 #write_xlsx(dr2, "dr2.xlsx")
 #write_xlsx(dr3, "dr3.xlsx")
+#write_xlsx(dr4, "dr4.xlsx")
 
 ## model selection ----
 
-# Based on the AICc of the best models in dr1, dr2, dr3 it is clear that dr2 and dr3
+# Based on the AICc of the best models in dr1, dr2, dr3, and dr4 it is clear that dr2 and dr3
 # results are identical, therefore we chose the second model (dr2) as the best, as it 
 # is a simpler model
 
@@ -324,20 +448,49 @@ dr3 <- MuMIn::dredge(c1,subset=!(Lysimachia&&fl_cov))
 
 # 1st model from dr2
 dr2_1 <- gam(log1p(bee_div)~s(Age) + fl_div, data=data2)
-plot(dr2_1) # the end curves upward
+plot(dr2_1) # increasing uncertainty at the end
 
 # 2nd model from dr2
 dr2_2 <- gam(log1p(bee_div)~s(Age) + fl_div + Area, data=data2)
-plot(dr2_2) # the end curves slightly downward
+plot(dr2_2) # the end curves slightly downward with slight upwards curve
 
 # 3rd model from dr2
 dr2_3 <- gam(log1p(bee_div)~s(Age) + fl_div + Lysimachia, data=data2)
 plot(dr2_3) # the end curves slightly upward
 
 # We would expect the bee diversity to rise again at some point during the forest succession
-# as windthrow occurs, but not as soon as 30 years after clear-cutting, so we chose dr2_2
-# as the best model based on AICc values and the response curve
+# as windthrows or other natural disturbances occurs, but not as soon as 30 years after 
+# clear-cutting, so we chose dr2_2 as the best model based on AICc values and the response curve
 summary(dr2_2)
+
+# residual evaluation
+
+DHARMa::testResiduals(DHARMa::simulateResiduals(dr2_2))
+res_dr2_2=DHARMa::simulateResiduals(dr2_2)
+plot(res_dr2_2$scaledResiduals~data2$Age)
+plot(res_dr2_2$scaledResiduals~data2$Area)
+plot(res_dr2_2$scaledResiduals~data2$fl_div)
+
+data2_locs=left_join(data2,locations,by="Identificator")
+data2_locs_sf=sf::st_as_sf(data2_locs,coords=c("Longitude","Latitude"),crs=4326)
+data2_locs_proj=sf::st_transform(data2_locs_sf,crs=3059)
+koords=sf::st_coordinates(data2_locs_proj)
+data2_locs_proj$x=koords[,1]
+data2_locs_proj$y=koords[,2]
+
+data2_locs_proj$res=res_dr2_2$scaledResiduals
+ggplot(data2_locs_proj,aes(y=y,x=x,col=res))+
+  geom_point()+
+  viridis::scale_color_viridis()+
+  coord_fixed(ratio=1)
+df_data2=data.frame(data2_locs_proj)
+coords <- cbind(df_data2$x, df_data2$y)
+nb <- dnearneigh(coords, 0, 20000)
+lw <- nb2listw(nb, style = "W")
+moran.test(df_data2$res, lw)
+coordinates(df_data2)<-c("x","y")
+Vario = gstat::variogram(scale(res) ~ 1, data=df_data2)
+plot(Vario)
 
 ## prognosis and visualisation ----
 
