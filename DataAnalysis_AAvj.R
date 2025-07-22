@@ -448,11 +448,11 @@ dr4 <- MuMIn::dredge(d1,subset=!(Lysimachia&&fl_cov))
 
 # 1st model from dr2
 dr2_1 <- gam(log1p(bee_div)~s(Age) + fl_div, data=data2)
-plot(dr2_1) # increasing uncertainty at the end
+plot(dr2_1) # increasing uncertainty at the end with slight upwards curve
 
 # 2nd model from dr2
 dr2_2 <- gam(log1p(bee_div)~s(Age) + fl_div + Area, data=data2)
-plot(dr2_2) # the end curves slightly downward with slight upwards curve
+plot(dr2_2) # the end curves slightly downward
 
 # 3rd model from dr2
 dr2_3 <- gam(log1p(bee_div)~s(Age) + fl_div + Lysimachia, data=data2)
