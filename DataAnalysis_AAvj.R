@@ -513,6 +513,10 @@ coordinates(df_data2)<-c("x","y")
 Vario = gstat::variogram(scale(res) ~ 1, data=df_data2)
 plot(Vario)
 
+### model coefficients table ----
+sjPlot::tab_model(dr2_2)
+flextable::as_flextable(dr2_2)
+
 ## prognosis and visualisation ----
 
 # Fig. 3
