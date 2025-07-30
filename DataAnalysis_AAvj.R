@@ -16,6 +16,7 @@ library(MuMIn)
 library(gstat)
 library(sp)
 library(spdep)
+library(openxlsx)
 
 # data ----
 data <- read_excel("data_bees.xlsx")
@@ -73,7 +74,8 @@ data2[is.na(data2)] <- 0
 hist(data$bee_div)
 skewness=sum((data$bee_div-mean(data$bee_div))^3)/((length(data$bee_div)-1)*sd(data$bee_div)^3)
 skewness
-
+prop_zeros=length(data$bee_div[data$bee_div==0])/length(data$bee_div)
+prop_zeros
 
 mg0a=glmmTMB::glmmTMB(log1p(bee_div) ~ 1+(1|id),
                      data=data,family=gaussian(),REML=FALSE)
@@ -104,6 +106,7 @@ mg6a=glmmTMB::glmmTMB(log1p(bee_div) ~ 1+s(Area,Age)+(1|id),
 mg6b=glmmTMB::glmmTMB(log1p(bee_div) ~ 1+s(Area,Age)+(1|id/fper),
                       data=data,family=gaussian(),REML=FALSE)
 
+# mg6b - nonconvergence
 
 
 mt0a=glmmTMB::glmmTMB(bee_div ~ 1+(1|id),
@@ -361,7 +364,7 @@ sjPlot::tab_model(mg1aR,mg2aR,mg3aR,mg4aR,mg5aR,mg6aR)
 
 
 ## prediction and visualisation ----
-data$prognosis=expm1(predict(mg6aR,data))
+data$prognosis=expm1(predict(mg1aR,data))
 prognosis_data=expand.grid(Age=seq(1,30,by=1),
                            Area=seq(0,5,0.25),
                            Period=c(1,2))
@@ -370,6 +373,20 @@ prognosis_data$prognosis=expm1(predict(mg6aR,prognosis_data, re.form = NA))
 # Fig 2
 labels <- c("Period 1", "Period 2")
 names(labels) <- c("1", "2")
+ggplot(prognosis_data, aes(Age, Area, fill = prognosis)) +
+  geom_raster() +
+  scale_fill_viridis_c() +
+  facet_wrap(~ Period, labeller = labeller(Period = as_labeller(labels))) +
+  theme_bw() +
+  labs(x = "Forest stand age, years", y = "Forest stand area, ha", fill = "Bee diversity, H") +
+  theme(
+    axis.text = element_text(size = 8),  
+    axis.title = element_text(size = 9), 
+    legend.text = element_text(size = 8), 
+    legend.title = element_text(size = 9)
+  )+
+  ggview::canvas(dpi=600,width=174,height=70,units="mm")
+
 fig2 <- ggplot(prognosis_data, aes(Age, Area, fill = prognosis)) +
   geom_raster() +
   scale_fill_viridis_c() +
@@ -382,8 +399,6 @@ fig2 <- ggplot(prognosis_data, aes(Age, Area, fill = prognosis)) +
     legend.text = element_text(size = 8), 
     legend.title = element_text(size = 9)
   )
-
-ggview(plot = fig2,dpi=600,width=174,height=70,units="mm")
 #ggsave(plot = fig2,filename="Fig2.png",dpi=600,width=174,height=70,units="mm")
 
 
@@ -403,8 +418,9 @@ ggview(plot = fig2,dpi=600,width=174,height=70,units="mm")
 # Question 3 ----
 # Which vegetation descriptors help to better explain bee diversity?
 
-# Using GAM - there is no need to consider pseudoreplication or seasonal variability, as we are using the mean values
-# of bee diversity, because of negligible effects in Q1
+# Using GLMs and GAMs - there is no need to consider pseudoreplication or seasonal variability, 
+# as we are using the mean values of bee diversity, because of negligible effects in Q1
+# we only use gaussian family with log1p(bee_div) because of the results in Q1
 
 ## corellations ----
 # Checking for correlations >0.59 to exclude them from further analysis, as is the usual procedure, since strongly 
@@ -416,6 +432,7 @@ cor.test(data2$Lysimachia, data2$fl_cov)
 
 ## modelling ----
 # generating all possible factor combinations using the "dredge" function
+
 options(na.action = na.fail)
 
 a1 <- gam(log1p(bee_div)~s(Age,Area)+fl_div+fl_cov+Lysimachia+Campanula,data=data2)
@@ -432,16 +449,17 @@ dr4 <- MuMIn::dredge(d1,subset=!(Lysimachia&&fl_cov))
 
 
 # exporting the dredge objects as excel files
-#write_xlsx(dr1, "dr1.xlsx")
-#write_xlsx(dr2, "dr2.xlsx")
-#write_xlsx(dr3, "dr3.xlsx")
-#write_xlsx(dr4, "dr4.xlsx")
+openxlsx::write.xlsx(dr1,"dr1.xlsx")
+openxlsx::write.xlsx(dr2,"dr2.xlsx")
+openxlsx::write.xlsx(dr3,"dr3.xlsx")
+openxlsx::write.xlsx(dr4,"dr4.xlsx")
 
 ## model selection ----
 
 # Based on the AICc of the best models in dr1, dr2, dr3, and dr4 it is clear that dr2 and dr3
-# results are identical, therefore we chose the second model (dr2) as the best, as it 
-# is a simpler model
+# results are identical and with lower AICc values even considering nonlinear effects
+# We chose the second model (dr2) - nonlinear smoothed patch age as the best, as it 
+# is a simpler model compared to also nonlinearly smoothed patch area
 
 # Checking the response curves for models with delta < 2 in addition to AICc to choose 
 # the best model
@@ -470,6 +488,9 @@ res_dr2_2=DHARMa::simulateResiduals(dr2_2)
 plot(res_dr2_2$scaledResiduals~data2$Age)
 plot(res_dr2_2$scaledResiduals~data2$Area)
 plot(res_dr2_2$scaledResiduals~data2$fl_div)
+plot(res_dr2_2$scaledResiduals~data2$fl_cov)
+plot(res_dr2_2$scaledResiduals~data2$Lysimachia)
+plot(res_dr2_2$scaledResiduals~data2$Campanula)
 
 data2_locs=left_join(data2,locations,by="Identificator")
 data2_locs_sf=sf::st_as_sf(data2_locs,coords=c("Longitude","Latitude"),crs=4326)
@@ -495,24 +516,6 @@ plot(Vario)
 ## prognosis and visualisation ----
 
 # Fig. 3
-# This figure is an addition to answer Q1
-gamviz <- ggpredict(dr2_2,terms="Age [n=100]")
-fig3 <- ggplot(gamviz, aes(x, predicted, ymin = conf.low, ymax = conf.high)) +
-  geom_ribbon(alpha = 0.25, fill = "blue") +
-  geom_line() +
-  theme_classic() +
-  labs(x = "Forest stand age, years", y = "Bee diversity, H") +
-  theme(
-    axis.text = element_text(size = 8),  
-    axis.title = element_text(size = 9), 
-    legend.text = element_text(size = 8), 
-    legend.title = element_text(size = 9)
-  )
-
-ggview(plot = fig3,dpi=600,width=84,height=60,units="mm")
-#ggsave(plot = fig3, filename="Fig3.png",dpi=600,width=84,height=60,units="mm")
-
-# Fig. 4
 prognosis_data2=expand.grid(Age=seq(1,30,by=1),
                             Area=seq(0,5,0.25),
                             fl_div=c(0,0.5,1,1.5,2,2.5))
@@ -522,7 +525,22 @@ dose.labs <- c("Plant diversity, H: 0", "Plant diversity, H: 0,5", "Plant divers
                "Plant diversity, H: 1,5", "Plant diversity, H: 2", "Plant diversity, H: 2,5")
 names(dose.labs) <- c("0", "0.5", "1", "1.5", "2", "2.5")
 
-fig4 <- ggplot(prognosis_data2, aes(Age, Area, fill = prognosis)) +
+ggplot(prognosis_data2, aes(Age, Area, fill = prognosis)) +
+  geom_raster() +
+  facet_wrap(~ fl_div, labeller = labeller(fl_div = as_labeller(dose.labs))) +
+  scale_fill_viridis_c() +
+  theme_bw() +
+  labs(x = "Forest stand age, years", y = "Forest stand area, ha", 
+       fill = "Bee diversity, H") +
+  theme(
+    axis.text = element_text(size = 8),  
+    axis.title = element_text(size = 9), 
+    legend.text = element_text(size = 8), 
+    legend.title = element_text(size = 9)
+  )+
+  canvas(dpi=600,width=174,height=100,units="mm")
+
+fig3 <- ggplot(prognosis_data2, aes(Age, Area, fill = prognosis)) +
   geom_raster() +
   facet_wrap(~ fl_div, labeller = labeller(fl_div = as_labeller(dose.labs))) +
   scale_fill_viridis_c() +
@@ -536,6 +554,5 @@ fig4 <- ggplot(prognosis_data2, aes(Age, Area, fill = prognosis)) +
     legend.title = element_text(size = 9)
   )
 
-ggview(plot = fig4,dpi=600,width=174,height=100,units="mm")
-#ggsave(plot = fig4, filename="Fig4.png",dpi=600,width=174,height=100,units="mm")
+#ggsave(plot = fig3, filename="Fig4.png",dpi=600,width=174,height=100,units="mm")
 
